@@ -1,0 +1,326 @@
+[
+  {
+    "ruleId": "MISSING_LOAN_ID",
+    "name": "Missing loan ID",
+    "description": "Row has no loan_id (or synthetic __MISSING__ id assigned at ingest)",
+    "severity": "blocking",
+    "messageTemplate": "Loan ID is missing on row {sourceRowIndex}",
+    "expression": {
+      "op": "regexMatch",
+      "field": "loanId",
+      "pattern": "^__MISSING__"
+    },
+    "active": true
+  },
+  {
+    "ruleId": "DUPLICATE_LOAN_ID",
+    "name": "Duplicate loan ID",
+    "description": "Another Loan record shares this loanId",
+    "severity": "blocking",
+    "messageTemplate": "Loan ID {loanId} appears in more than one row",
+    "expression": {
+      "op": "duplicateLoanId"
+    },
+    "active": true
+  },
+  {
+    "ruleId": "DUPLICATE_BORROWER_TRIPLE",
+    "name": "Duplicate borrower/amount/date triple",
+    "description": "Same borrower_id + original_principal + origination_date as another loan",
+    "severity": "high",
+    "messageTemplate": "Borrower {borrowerId} appears twice with same principal and origination date",
+    "expression": {
+      "op": "duplicateBorrowerTriple"
+    },
+    "active": true
+  },
+  {
+    "ruleId": "MATURITY_BEFORE_ORIGINATION",
+    "name": "Maturity before origination",
+    "description": "maturity_date < origination_date",
+    "severity": "blocking",
+    "messageTemplate": "maturity_date {maturityDate} is before origination_date {originationDate}",
+    "expression": {
+      "op": "crossFieldCompare",
+      "left": "maturityDate",
+      "op2": "lt",
+      "right": "originationDate"
+    },
+    "active": true
+  },
+  {
+    "ruleId": "BALANCE_EXCEEDS_PRINCIPAL",
+    "name": "Current balance exceeds original principal",
+    "description": "current_balance > original_principal * 1.05",
+    "severity": "high",
+    "messageTemplate": "current_balance {currentBalance} > 1.05 * original_principal {originalPrincipal}",
+    "expression": {
+      "op": "crossFieldCompare",
+      "left": "currentBalance",
+      "op2": "gt",
+      "right": "originalPrincipal",
+      "rightMultiplier": 1.05
+    },
+    "active": true
+  },
+  {
+    "ruleId": "NEGATIVE_BALANCE",
+    "name": "Negative current balance",
+    "description": "current_balance < 0",
+    "severity": "high",
+    "messageTemplate": "current_balance is negative: {currentBalance}",
+    "expression": {
+      "op": "lt",
+      "field": "currentBalance",
+      "value": 0
+    },
+    "active": true
+  },
+  {
+    "ruleId": "INTEREST_RATE_OUT_OF_RANGE",
+    "name": "Interest rate out of range",
+    "description": "interest_rate must be between 0 and 30",
+    "severity": "medium",
+    "messageTemplate": "interest_rate {interestRate} outside 0..30",
+    "expression": {
+      "op": "or",
+      "args": [
+        {
+          "op": "lt",
+          "field": "interestRate",
+          "value": 0
+        },
+        {
+          "op": "gt",
+          "field": "interestRate",
+          "value": 30
+        }
+      ]
+    },
+    "active": true
+  },
+  {
+    "ruleId": "STATUS_DPD_MISMATCH",
+    "name": "Payment status vs days past due mismatch",
+    "description": "current with dpd>30, or delinquent with dpd=0",
+    "severity": "high",
+    "messageTemplate": "payment_status {paymentStatus} inconsistent with days_past_due {daysPastDue}",
+    "expression": {
+      "op": "or",
+      "args": [
+        {
+          "op": "and",
+          "args": [
+            {
+              "op": "equals",
+              "field": "paymentStatus",
+              "value": "current"
+            },
+            {
+              "op": "gt",
+              "field": "daysPastDue",
+              "value": 30
+            }
+          ]
+        },
+        {
+          "op": "and",
+          "args": [
+            {
+              "op": "equals",
+              "field": "paymentStatus",
+              "value": "delinquent"
+            },
+            {
+              "op": "equals",
+              "field": "daysPastDue",
+              "value": 0
+            }
+          ]
+        }
+      ]
+    },
+    "active": true
+  },
+  {
+    "ruleId": "CLOSED_BUT_POSITIVE_BALANCE",
+    "name": "Closed loan with positive balance",
+    "description": "payment_status in (paid_off, closed) but current_balance > 0",
+    "severity": "high",
+    "messageTemplate": "{paymentStatus} loan still has current_balance {currentBalance}",
+    "expression": {
+      "op": "and",
+      "args": [
+        {
+          "op": "inSet",
+          "field": "paymentStatus",
+          "values": [
+            "paid_off",
+            "closed"
+          ]
+        },
+        {
+          "op": "gt",
+          "field": "currentBalance",
+          "value": 0
+        }
+      ]
+    },
+    "active": true
+  },
+  {
+    "ruleId": "INVALID_STATE_CODE",
+    "name": "Invalid US state code",
+    "description": "state must be a valid two-letter US code",
+    "severity": "medium",
+    "messageTemplate": "state {state} is not a valid US state code",
+    "expression": {
+      "op": "notInSet",
+      "field": "state",
+      "values": [
+        "AL",
+        "AK",
+        "AZ",
+        "AR",
+        "CA",
+        "CO",
+        "CT",
+        "DE",
+        "FL",
+        "GA",
+        "HI",
+        "ID",
+        "IL",
+        "IN",
+        "IA",
+        "KS",
+        "KY",
+        "LA",
+        "ME",
+        "MD",
+        "MA",
+        "MI",
+        "MN",
+        "MS",
+        "MO",
+        "MT",
+        "NE",
+        "NV",
+        "NH",
+        "NJ",
+        "NM",
+        "NY",
+        "NC",
+        "ND",
+        "OH",
+        "OK",
+        "OR",
+        "PA",
+        "RI",
+        "SC",
+        "SD",
+        "TN",
+        "TX",
+        "UT",
+        "VT",
+        "VA",
+        "WA",
+        "WV",
+        "WI",
+        "WY"
+      ]
+    },
+    "active": true
+  },
+  {
+    "ruleId": "STALE_LAST_UPDATED",
+    "name": "Stale last_updated_at",
+    "description": "last_updated_at older than 365 days",
+    "severity": "low",
+    "messageTemplate": "last_updated_at {lastUpdatedAt} is more than 365 days old",
+    "expression": {
+      "op": "olderThanDays",
+      "field": "lastUpdatedAt",
+      "days": 365
+    },
+    "active": true
+  },
+  {
+    "ruleId": "MISSING_DOCUMENTS",
+    "name": "Documents incomplete",
+    "description": "document_status = missing OR any manifest row missing",
+    "severity": "medium",
+    "messageTemplate": "document_status is {documentStatus}",
+    "expression": {
+      "op": "or",
+      "args": [
+        {
+          "op": "equals",
+          "field": "documentStatus",
+          "value": "missing"
+        },
+        {
+          "op": "manifestHasMissing"
+        }
+      ]
+    },
+    "active": true
+  },
+  {
+    "ruleId": "CROSS_SOURCE_CONFLICT",
+    "name": "Cross-source conflict with servicer update",
+    "description": "loan_tape and servicer_update disagree on a monitored field",
+    "severity": "high",
+    "messageTemplate": "servicer_update disagrees on {conflictField}",
+    "expression": {
+      "op": "conflictsWithOtherSource",
+      "source": "servicerUpdates",
+      "keyField": "loanId",
+      "compareFields": [
+        "currentBalance",
+        "paymentStatus",
+        "daysPastDue"
+      ],
+      "onlyIfFresher": true
+    },
+    "active": true
+  },
+  {
+    "ruleId": "ORPHAN_SERVICER_UPDATE",
+    "name": "Orphan servicer update row",
+    "description": "servicer_update row references a loan_id not in loan_tape",
+    "severity": "medium",
+    "messageTemplate": "servicer update for {loanId} has no matching loan",
+    "appliesTo": "servicerUpdate",
+    "expression": {
+      "op": "not",
+      "args": [
+        {
+          "op": "existsInOtherSource",
+          "source": "loanTapeLoans",
+          "keyField": "loanId"
+        }
+      ]
+    },
+    "active": true
+  },
+  {
+    "ruleId": "ORPHAN_DOCUMENT",
+    "name": "Orphan document manifest row",
+    "description": "document_manifest row references a loan_id not in loan_tape",
+    "severity": "low",
+    "messageTemplate": "document row for {loanId} has no matching loan",
+    "appliesTo": "manifest",
+    "expression": {
+      "op": "not",
+      "args": [
+        {
+          "op": "existsInOtherSource",
+          "source": "loanTapeLoans",
+          "keyField": "loanId"
+        }
+      ]
+    },
+    "active": true
+  }
+]

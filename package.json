@@ -1,0 +1,24 @@
+{
+  "name": "intain-verify",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Intain Loan Data Verification Copilot — MERN monorepo",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "install:all": "npm install",
+    "setup": "npm install && npm --workspace backend run check:env && npm --workspace backend run reset -- --yes",
+    "dev": "concurrently -k -n api,web -c blue,magenta \"npm --workspace backend run dev\" \"npm --workspace frontend run dev\"",
+    "backend": "npm --workspace backend run dev",
+    "frontend": "npm --workspace frontend run dev",
+    "check:env": "npm --workspace backend run check:env",
+    "reset": "npm --workspace backend run reset -- --yes",
+    "smoke": "npm --workspace backend run smoke -- --yes",
+    "start:demo": "npm run reset && npm run dev"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

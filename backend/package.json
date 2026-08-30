@@ -1,0 +1,41 @@
+{
+  "name": "backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "seed:users": "node src/seed/seedUsers.js",
+    "seed:rules": "node src/services/ruleSeeder.js",
+    "seed:dev-log": "node src/seed/seedDevLog.js",
+    "gen:samples": "node scripts/generateSamples.js",
+    "ingest:samples": "node scripts/ingestSamples.js",
+    "validate:all": "node scripts/runValidation.js",
+    "db:indexes": "node scripts/ensureIndexes.js",
+    "chain:verify": "node scripts/verifyChain.js",
+    "demo:tamper": "node scripts/tamperDemo.js",
+    "demo:untamper": "node scripts/untamperDemo.js",
+    "trust:recompute": "node scripts/recomputeTrust.js",
+    "trust:test": "node scripts/testTrustScore.js",
+    "smoke": "node scripts/smoke.js",
+    "reset": "node scripts/reset.js",
+    "check:env": "node scripts/checkEnv.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "csv-parse": "^5.5.6",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.5.1",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}

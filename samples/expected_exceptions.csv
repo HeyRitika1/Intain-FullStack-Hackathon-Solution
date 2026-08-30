@@ -1,0 +1,42 @@
+loan_id,rule_id,severity,note
+,MISSING_LOAN_ID,blocking,row 46: synthetic __MISSING__ id at ingest
+,MISSING_LOAN_ID,blocking,row 47: synthetic __MISSING__ id at ingest
+LN-0001,DUPLICATE_LOAN_ID,blocking,row 1 and row 48 share loan_id
+LN-0001,DUPLICATE_LOAN_ID,blocking,row 48 (duplicate of row 1)
+LN-0002,DUPLICATE_LOAN_ID,blocking,row 2 and row 49 share loan_id
+LN-0002,DUPLICATE_LOAN_ID,blocking,row 49 (duplicate of row 2)
+LN-0050,DUPLICATE_BORROWER_TRIPLE,high,same borrower/principal/origination as LN-0051
+LN-0051,DUPLICATE_BORROWER_TRIPLE,high,same borrower/principal/origination as LN-0050
+LN-0052,MATURITY_BEFORE_ORIGINATION,blocking,maturity < origination
+LN-0053,BALANCE_EXCEEDS_PRINCIPAL,high,110000 > 100000 * 1.05
+LN-0054,NEGATIVE_BALANCE,high,current_balance = -5000
+LN-0055,INTEREST_RATE_OUT_OF_RANGE,medium,interest_rate = 45
+LN-0056,STATUS_DPD_MISMATCH,high,current with dpd=90
+LN-0057,CLOSED_BUT_POSITIVE_BALANCE,high,paid_off with balance=12000
+LN-0058,INVALID_STATE_CODE,medium,state=ZZ
+LN-0059,STALE_LAST_UPDATED,low,last_updated_at 420 days ago
+LN-0060,MISSING_DOCUMENTS,medium,document_status=missing on loan_tape
+LN-0003,MISSING_DOCUMENTS,medium,at least one manifest row is missing
+LN-0007,MISSING_DOCUMENTS,medium,at least one manifest row is missing
+LN-0012,MISSING_DOCUMENTS,medium,at least one manifest row is missing
+LN-0015,MISSING_DOCUMENTS,medium,at least one manifest row is missing
+LN-0019,MISSING_DOCUMENTS,medium,at least one manifest row is missing
+LN-0001,CROSS_SOURCE_CONFLICT,high,servicer_update has fresher current_balance
+LN-0002,CROSS_SOURCE_CONFLICT,high,servicer_update has fresher current_balance
+LN-0003,CROSS_SOURCE_CONFLICT,high,servicer_update has fresher current_balance
+LN-0004,CROSS_SOURCE_CONFLICT,high,servicer_update has fresher current_balance
+LN-0005,CROSS_SOURCE_CONFLICT,high,servicer_update has fresher current_balance
+LN-0006,CROSS_SOURCE_CONFLICT,high,servicer_update has fresher current_balance
+LN-0007,CROSS_SOURCE_CONFLICT,high,servicer_update has fresher current_balance
+LN-0008,CROSS_SOURCE_CONFLICT,high,servicer_update has fresher current_balance
+LN-0009,CROSS_SOURCE_CONFLICT,high,servicer_update has fresher current_balance
+LN-0010,CROSS_SOURCE_CONFLICT,high,servicer_update has fresher current_balance
+LN-0011,CROSS_SOURCE_CONFLICT,high,servicer_update has fresher current_balance
+LN-0012,CROSS_SOURCE_CONFLICT,high,servicer_update has fresher current_balance
+LN-0013,CROSS_SOURCE_CONFLICT,high,servicer_update has fresher current_balance
+LN-0014,CROSS_SOURCE_CONFLICT,high,servicer_update has fresher current_balance
+LN-0015,CROSS_SOURCE_CONFLICT,high,servicer_update has fresher current_balance
+LN-9001,ORPHAN_SERVICER_UPDATE,medium,servicer_update has no matching loan (synthetic __ORPHAN__servicer__LN-9001)
+LN-9002,ORPHAN_SERVICER_UPDATE,medium,servicer_update has no matching loan (synthetic __ORPHAN__servicer__LN-9002)
+LN-9101,ORPHAN_DOCUMENT,low,document_manifest has no matching loan
+LN-9102,ORPHAN_DOCUMENT,low,document_manifest has no matching loan

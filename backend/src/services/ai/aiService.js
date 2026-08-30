@@ -80,10 +80,11 @@ export async function run({ templateName, input, actor = null, loanId = null, ex
       }
     } catch (err) {
       const kind = err instanceof AiProviderError ? err.kind : "network";
-      logger.warn(`[ai] provider ${kind} error for ${templateName}: ${err.message}`);
+      const detailStr = err.details ? ` (${typeof err.details === "object" ? JSON.stringify(err.details) : err.details})` : "";
+      logger.warn(`[ai] provider ${kind} error for ${templateName}: ${err.message}${detailStr}`);
       output = {
         ...tpl.buildFallback(input),
-        _providerError: `${kind}: ${err.message}`,
+        _providerError: `${kind}: ${err.message}${detailStr}`,
       };
       fallbackUsed = true;
     }

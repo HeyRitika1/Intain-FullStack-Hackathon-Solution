@@ -24,8 +24,11 @@ export const env = {
   PORT: Number(process.env.PORT || 4000),
   MONGODB_URI: required("MONGODB_URI", process.env.MONGODB_URI),
   JWT_SECRET: required("JWT_SECRET", process.env.JWT_SECRET),
-  AI_ENABLED: String(process.env.AI_ENABLED || "false").toLowerCase() === "true",
-  AI_API_KEY: process.env.AI_API_KEY || "",
-  AI_API_BASE_URL: process.env.AI_API_BASE_URL || "https://api.openai.com/v1",
-  AI_MODEL: process.env.AI_MODEL || "gpt-4o-mini",
+  AI_ENABLED:
+    process.env.AI_ENABLED !== undefined
+      ? String(process.env.AI_ENABLED).trim().toLowerCase() === "true"
+      : Boolean(process.env.AI_API_KEY && process.env.AI_API_KEY.trim() !== ""),
+  AI_API_KEY: (process.env.AI_API_KEY || "").trim(),
+  AI_API_BASE_URL: (process.env.AI_API_BASE_URL || "https://api.openai.com/v1").trim(),
+  AI_MODEL: (process.env.AI_MODEL || "gpt-4o-mini").trim(),
 };

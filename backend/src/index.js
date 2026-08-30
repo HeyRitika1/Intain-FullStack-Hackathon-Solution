@@ -12,27 +12,17 @@ import { printRouteTable } from "./routes/apiSchema.js";
 
 const app = express();
 
-const allowedOrigins = [
-  "http://localhost:5173",
-  "http://127.0.0.1:5173",
-  "http://localhost:4173",
-];
-if (process.env.CLIENT_URL) {
-  allowedOrigins.push(process.env.CLIENT_URL.replace(/\/$/, ""));
-}
-
+// Bulletproof CORS setup for local dev, Vercel preview/production domains, and Render
 app.use(
   cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin) || /\.vercel\.app$/.test(origin)) {
-        return callback(null, true);
-      }
-      return callback(null, true);
-    },
+    origin: true,
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+    optionsSuccessStatus: 200,
   })
 );
+app.options("*", cors());
 app.use(express.json({ limit: "20mb" }));
 app.use(morgan("dev"));
 

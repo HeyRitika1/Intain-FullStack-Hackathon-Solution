@@ -138,3 +138,36 @@ Get-NetTCPConnection -LocalPort 4000 -State Listen | ForEach-Object { Stop-Proce
 **AI panel stuck on the "fallback" chip after enabling a key** — kill the backend and `npm run dev` again; env is read at startup.
 
 **`concurrently: command not found`** — `npm install` didn't finish. Re-run `npm install` from the repo root.
+
+---
+
+## Deployment Guide (Vercel & Render)
+
+### 1. Backend Deployment on Render
+
+1. Create a **Web Service** on [Render](https://render.com).
+2. Connect your GitHub repository `Intain-FullStack-Hackathon-Solution`.
+3. Set the following settings:
+   - **Root Directory**: `backend`
+   - **Build Command**: `npm install`
+   - **Start Command**: `npm start`
+4. Add Environment Variables in Render:
+   - `MONGODB_URI`: Your MongoDB Atlas Connection String
+   - `JWT_SECRET`: A long random secret string (32+ chars)
+   - `CLIENT_URL`: `https://your-frontend.vercel.app` (your Vercel URL)
+   - `AI_ENABLED`: `false` (or `true` if supplying `AI_API_KEY`)
+5. Deploy and copy your Render service URL (e.g. `https://intain-backend.onrender.com`).
+
+---
+
+### 2. Frontend Deployment on Vercel
+
+1. Import your GitHub repository on [Vercel](https://vercel.com).
+2. Set the following settings:
+   - **Root Directory**: `frontend`
+   - **Framework Preset**: `Vite`
+   - **Build Command**: `npm run build`
+   - **Output Directory**: `dist`
+3. Add Environment Variable in Vercel:
+   - `VITE_API_URL`: Your Render backend URL (e.g., `https://intain-backend.onrender.com`)
+4. Deploy! `frontend/vercel.json` ensures client-side routing works cleanly without 404 errors.

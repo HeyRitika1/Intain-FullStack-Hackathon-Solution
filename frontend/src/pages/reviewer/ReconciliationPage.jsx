@@ -131,6 +131,7 @@ function SelectedLoanView({ loanId, onBack }) {
       if (res.autoResolvedExceptionId) {
         toast.success("CROSS_SOURCE_CONFLICT auto-resolved");
       }
+      if (res.autoVerified) toast.success(`${loanId} auto-verified`);
       refetch();
     } catch (err) {
       toast.error(`Update failed: ${err.message}`);
@@ -151,6 +152,7 @@ function SelectedLoanView({ loanId, onBack }) {
       const res = await apiPatch(`/loans/${encodeURIComponent(loanId)}`, body);
       toast.success(`Bulk applied ${data.diffs.length} field(s) from ${source}`);
       if (res.autoResolvedExceptionId) toast.success("CROSS_SOURCE_CONFLICT auto-resolved");
+      if (res.autoVerified) toast.success(`${loanId} auto-verified`);
       refetch();
     } catch (err) {
       toast.error(`Bulk apply failed: ${err.message}`);

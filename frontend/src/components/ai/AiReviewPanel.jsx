@@ -17,7 +17,7 @@ export default function AiReviewPanel({ loan, exception, onDecisionApplied }) {
   const [loadingBtn, setLoadingBtn] = useState(null);
   const [slow, setSlow] = useState(false);
   const [error, setError] = useState(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(true);
   const [historyPreview, setHistoryPreview] = useState(null);
   const [confirming, setConfirming] = useState(null);
   const slowTimer = useRef(null);
@@ -126,6 +126,7 @@ export default function AiReviewPanel({ loan, exception, onDecisionApplied }) {
       const res = await apiPatch(`/exceptions/${encodeURIComponent(exceptionId)}/resolve`, body);
       if (res.alreadyApplied) toast.info("Already applied");
       else toast.success(`${action.replace("_", " ")} recorded`);
+      if (res.autoVerified) toast.success(`${loanId} auto-verified`);
       onDecisionApplied?.();
     } catch (err) {
       toast.error(`Decision failed: ${err.message}`);
@@ -529,10 +530,12 @@ function HistorySection({ open, toggle, history, onOpenEntry }) {
 function HistoryDrawer({ recId, onClose }) {
   const [rec, setRec] = useState(null);
   useEffect(() => {
-    apiGet(`/ai/recommendations?limit=100`).then((r) => {
-      const found = (r.items || []).find((i) => String(i._id) === String(recId));
-      setRec(found || null);
-    }).catch(() => {});
+    // Use the single-item endpoint so we don't lose the target rec when the
+    // global list exceeds the page limit — fixes "AI history entries stop
+    // opening after ~100 recommendations exist".
+    apiGet(`/ai/recommendations/${encodeURIComponent(recId)}`)
+      .then((r) => setRec(r?.recommendation || null))
+      .catch(() => setRec(null));
   }, [recId]);
 
   const promptSnapshot = rec?.promptSnapshot ? tryParseJson(rec.promptSnapshot) : null;

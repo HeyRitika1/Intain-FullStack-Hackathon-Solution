@@ -120,7 +120,7 @@ export default function ExceptionQueuePage() {
             <input
               value={filters.q}
               onChange={(e) => setFilter("q", e.target.value)}
-              placeholder="loanId, rule name, message…"
+              placeholder="loanId, borrower, rule name/id, message…"
               className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
             />
           </div>

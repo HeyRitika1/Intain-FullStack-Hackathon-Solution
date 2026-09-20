@@ -1,6 +1,11 @@
 // Deterministic sample-data generator. No external deps beyond Node built-ins.
 // Run: npm --workspace backend run gen:samples
 // Writes into repo-root /samples/. Reruns produce byte-identical files.
+//
+// Scale knobs (all optional):
+//   SAMPLES_SIZE=3000              -> total loan_tape rows (min 60, curated 1..60 preserved)
+//   SERVICER_EXTRA_BATCHES=3       -> additional servicer_update_YYYYMM.csv files (rolling monthly cycles)
+//   MANIFEST_EXTRA_COVERAGE=0.35   -> fraction of extra loans covered by document_manifest
 
 import fs from "node:fs";
 import path from "node:path";
@@ -12,6 +17,17 @@ const SAMPLES_DIR = path.resolve(__dirname, "../../samples");
 
 // Anchor "today" for reproducibility. All date deltas hang off this.
 const ANCHOR = new Date("2026-08-30T00:00:00Z");
+
+const SAMPLES_SIZE = Math.max(60, Number.parseInt(process.env.SAMPLES_SIZE || "60", 10) || 60);
+const SERVICER_EXTRA_BATCHES = Math.max(0, Number.parseInt(process.env.SERVICER_EXTRA_BATCHES || "0", 10) || 0);
+const MANIFEST_EXTRA_COVERAGE = clamp01(Number.parseFloat(process.env.MANIFEST_EXTRA_COVERAGE || "0.35"));
+
+function clamp01(n) {
+  if (!Number.isFinite(n)) return 0;
+  if (n < 0) return 0;
+  if (n > 1) return 1;
+  return n;
+}
 
 // -------------------- deterministic PRNG (mulberry32) --------------------
 function mulberry32(seed) {
@@ -140,6 +156,49 @@ function buildLoanTape() {
   // Row 60: document_status=missing
   rows.push(brokenRow(60, { document_status: "missing" }));
 
+  // ---- optional bulk-clean extras (LN-0061 .. LN-<SAMPLES_SIZE>) ----
+  // All extras keep the same shape as the "45 clean rows" above so no rule
+  // besides the trickle we intentionally embed below can fire on them.
+  for (let i = 61; i <= SAMPLES_SIZE; i++) {
+    const origDaysAgo = intBetween(120, 1600);
+    const origDate = daysBefore(ANCHOR, origDaysAgo);
+    const termYears = pick([10, 15, 20, 25, 30]);
+    const maturityDate = daysAfter(origDate, termYears * 365);
+    const originalPrincipal = round2(40000 + rng() * 750000);
+    const currentBalance = round2(originalPrincipal * between(0.20, 0.98));
+    const interestRate = round2(2.5 + rng() * 12);
+    // ~10% delinquent, ~2% deep-delinquent (dpd > 90 with delinquent status → clean)
+    const roll = rng();
+    let paymentStatus = "current";
+    let daysPastDue = 0;
+    if (roll < 0.02) { paymentStatus = "delinquent"; daysPastDue = intBetween(91, 179); }
+    else if (roll < 0.12) { paymentStatus = "delinquent"; daysPastDue = intBetween(31, 90); }
+    // ~4% paid_off with balance=0 (clean closed state)
+    if (rng() < 0.04) { paymentStatus = "paid_off"; daysPastDue = 0; }
+    const balance = paymentStatus === "paid_off" ? 0 : currentBalance;
+    // ~5% intentionally stale to give the low-severity rule volume across the portfolio.
+    const stale = rng() < 0.05;
+    const lastUpdatedDaysAgo = stale ? intBetween(400, 900) : intBetween(3, 90);
+    const lastUpdatedAt = daysBefore(ANCHOR, lastUpdatedDaysAgo);
+    // ~7% with an explicit document_status=missing (drives MISSING_DOCUMENTS beyond LN-0060).
+    const docStatus = rng() < 0.07 ? "missing" : "unknown";
+    rows.push({
+      loan_id: `LN-${pad(i)}`,
+      borrower_id: `BR-${pad(i)}`,
+      borrower_name: `${pick(FIRST)} ${pick(LAST)}`,
+      state: pick(US_STATES),
+      origination_date: fmtDate(origDate),
+      maturity_date: fmtDate(maturityDate),
+      original_principal: originalPrincipal,
+      current_balance: balance,
+      interest_rate: interestRate,
+      payment_status: paymentStatus,
+      days_past_due: daysPastDue,
+      last_updated_at: fmtDate(lastUpdatedAt),
+      document_status: docStatus,
+    });
+  }
+
   return rows;
 }
 
@@ -226,7 +285,61 @@ function buildServicerUpdate(loanTape) {
     last_updated_at: fmtDate(daysBefore(ANCHOR, 8)),
   });
 
+  // ---- optional bulk-clean coverage on the extras (LN-0061..) ----
+  // ~35% of extras get a fresh servicer row. Roughly half of those have a
+  // material balance nudge (fires CROSS_SOURCE_CONFLICT); the rest are dead
+  // matches (no conflict — reviewer sees them as "reconciled").
+  for (let i = 61; i <= loanTape.length; i++) {
+    const loan = loanTape[i - 1];
+    if (!loan || rng() > 0.35) continue;
+    const materialNudge = rng() < 0.55;
+    const factor = materialNudge ? 1 - between(0.03, 0.12) : 1;
+    rows.push({
+      loan_id: loan.loan_id,
+      current_balance: round2(loan.current_balance * factor),
+      payment_status: loan.payment_status,
+      days_past_due: loan.days_past_due,
+      last_updated_at: fmtDate(daysBefore(ANCHOR, intBetween(1, 20))),
+    });
+  }
+
   return rows;
+}
+
+// Additional "monthly cycle" servicer files. Each cycle picks a fresh subset of
+// loans and bumps the balance / dpd — great for demoing repeated ingest and
+// reconciliation over time without regenerating the base servicer_update.csv.
+function buildExtraServicerBatch(loanTape, cycleIdx) {
+  const rows = [];
+  const cycleDaysBack = cycleIdx * 30 + intBetween(1, 5);
+  const coverage = 0.15 + rng() * 0.10;
+  for (const loan of loanTape) {
+    if (loan.loan_id.startsWith("LN-90")) continue; // skip orphan echoes
+    if (rng() > coverage) continue;
+    const material = rng() < 0.5;
+    const factor = material ? 1 - between(0.01, 0.08) : 1;
+    const bumpDpd = loan.payment_status === "delinquent" && rng() < 0.3
+      ? Math.min(180, (loan.days_past_due || 0) + intBetween(15, 30))
+      : loan.days_past_due;
+    rows.push({
+      loan_id: loan.loan_id,
+      current_balance: round2(loan.current_balance * factor),
+      payment_status: loan.payment_status,
+      days_past_due: bumpDpd,
+      last_updated_at: fmtDate(daysBefore(ANCHOR, cycleDaysBack)),
+    });
+  }
+  return rows;
+}
+
+function cycleLabel(cycleIdx) {
+  // Subtract whole months from the anchor so labels are guaranteed unique
+  // across cycles (30-day arithmetic collides — e.g. 30 and 60 days back
+  // both land in July from a late-August anchor).
+  const d = new Date(Date.UTC(ANCHOR.getUTCFullYear(), ANCHOR.getUTCMonth() - cycleIdx, 1));
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  return `${yyyy}${mm}`;
 }
 
 // -------------------- document manifest --------------------
@@ -263,6 +376,26 @@ function buildDocManifest(loanTape) {
     doc_status: "pending",
     received_at: "",
   });
+
+  // ---- optional bulk-clean manifest for extras (LN-0061..) ----
+  // ~35% coverage by default. Of those, ~15% have one missing doc, driving
+  // MISSING_DOCUMENTS across the portfolio for a realistic-looking dashboard.
+  for (let i = 61; i <= loanTape.length; i++) {
+    const loan = loanTape[i - 1];
+    if (!loan) continue;
+    if (rng() > MANIFEST_EXTRA_COVERAGE) continue;
+    const missDoc = rng() < 0.15 ? pick(DOC_TYPES) : null;
+    for (const doc of DOC_TYPES) {
+      const isMissing = doc === missDoc;
+      rows.push({
+        loan_id: loan.loan_id,
+        doc_type: doc,
+        doc_status: isMissing ? "missing" : "received",
+        received_at: isMissing ? "" : fmtDate(daysBefore(ANCHOR, intBetween(20, 500))),
+      });
+    }
+  }
+
   return rows;
 }
 
@@ -500,6 +633,14 @@ function write(name, contents) {
 function main() {
   fs.mkdirSync(SAMPLES_DIR, { recursive: true });
 
+  // Remove any leftover monthly-cycle files from a previous larger run so the
+  // /samples/ folder always reflects the current config exactly.
+  for (const name of fs.readdirSync(SAMPLES_DIR)) {
+    if (/^servicer_update_\d{6}\.csv$/i.test(name)) {
+      fs.unlinkSync(path.join(SAMPLES_DIR, name));
+    }
+  }
+
   const loanTape = buildLoanTape();
   const servicer = buildServicerUpdate(loanTape);
   const manifest = buildDocManifest(loanTape);
@@ -523,6 +664,18 @@ function main() {
     ])),
     rowCount: servicer.length,
   });
+  // Optional monthly cycles — labelled by YYYYMM so demo can show repeated ingest.
+  for (let c = 1; c <= SERVICER_EXTRA_BATCHES; c++) {
+    const extra = buildExtraServicerBatch(loanTape, c);
+    const name = `servicer_update_${cycleLabel(c)}.csv`;
+    written.push({
+      name,
+      ...write(name, toCsv(extra, [
+        "loan_id","current_balance","payment_status","days_past_due","last_updated_at",
+      ])),
+      rowCount: extra.length,
+    });
+  }
   written.push({
     name: "document_manifest.csv",
     ...write("document_manifest.csv", toCsv(manifest, [
@@ -549,9 +702,9 @@ function main() {
   console.log("[gen:samples] wrote:");
   for (const w of written) {
     const rc = w.rowCount === null ? "" : `${w.rowCount} rows, `;
-    console.log(`  ${w.name.padEnd(24)} ${rc}${w.bytes} bytes`);
+    console.log(`  ${w.name.padEnd(32)} ${rc}${w.bytes} bytes`);
   }
-  console.log(`[gen:samples] done. anchor=${fmtDate(ANCHOR)}`);
+  console.log(`[gen:samples] anchor=${fmtDate(ANCHOR)} SAMPLES_SIZE=${SAMPLES_SIZE} servicerExtra=${SERVICER_EXTRA_BATCHES}`);
   return written;
 }
 

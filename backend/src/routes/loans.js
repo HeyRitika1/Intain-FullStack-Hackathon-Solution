@@ -11,6 +11,7 @@ import {
   findOpenCrossSourceConflict,
   loadServicerRow,
 } from "../services/reconciliationService.js";
+import { computeVerifiabilityStatus, verifyLoan } from "../services/verificationService.js";
 
 const router = express.Router();
 router.use(requireAuth);
@@ -203,12 +204,25 @@ router.patch(
       });
     }
 
+    // If the loan now has zero blocking exceptions, promote it straight to
+    // verified so the reconciliation board reflects the reviewer's action
+    // without a separate "Verify" click.
+    let autoVerified = false;
+    try {
+      const eligibility = await computeVerifiabilityStatus(loan.loanId);
+      if (eligibility.eligible && loan.verificationStatus !== "verified") {
+        await verifyLoan(loan.loanId, { id: req.user.id, role: req.user.role });
+        autoVerified = true;
+      }
+    } catch (_err) { /* keep the edit success; verify is best-effort here */ }
+
     res.json({
       loan: loan.toObject(),
       changed: true,
       before,
       after,
       autoResolvedExceptionId,
+      autoVerified,
     });
   })
 );

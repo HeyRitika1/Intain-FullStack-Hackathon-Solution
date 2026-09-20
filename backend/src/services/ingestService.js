@@ -283,6 +283,7 @@ export async function commitLoanTape(batchId) {
   const { rows } = parseCsv(raw.rawText);
   const seen = new Map();
   const duplicates = new Set();
+  const droppedDuplicateRows = []; // rows overwritten by a later duplicate loan_id
   const loans = [];
 
   for (const row of rows) {
@@ -292,7 +293,15 @@ export async function commitLoanTape(batchId) {
     if (!loan.loanId) {
       loan.loanId = `__MISSING__${loan.sourceRowIndex}__${batchId.slice(0, 8)}`;
     }
-    if (seen.has(loan.loanId)) duplicates.add(loan.loanId);
+    if (seen.has(loan.loanId)) {
+      duplicates.add(loan.loanId);
+      const prev = seen.get(loan.loanId);
+      droppedDuplicateRows.push({
+        rowIndex: prev.sourceRowIndex,
+        rawRow: { loan_id: loan.loanId, borrower_id: prev.borrowerId, borrower_name: prev.borrowerName },
+        reason: `duplicate loan_id — overwritten by later row ${loan.sourceRowIndex}`,
+      });
+    }
     seen.set(loan.loanId, loan);
     loans.push(loan);
   }
@@ -307,12 +316,23 @@ export async function commitLoanTape(batchId) {
   if (ops.length) await Loan.bulkWrite(ops);
 
   const uniqueLoanIds = [...seen.keys()];
+
+  // Surface duplicate-drop as "failed rows" so the operator dashboard doesn't hide
+  // the fact that some rows were merged. Preview-time parse failures already live
+  // in raw.failedRows; we append duplicates without clobbering those.
+  if (droppedDuplicateRows.length) {
+    raw.failedRows = [...(raw.failedRows || []), ...droppedDuplicateRows];
+    raw.failedRowCount = (raw.failedRowCount || 0) + droppedDuplicateRows.length;
+  }
+
   raw.notes = {
     ...(isPlainObject(raw.notes) ? raw.notes : {}),
     duplicateLoanIds: [...duplicates],
+    duplicateRowCount: droppedDuplicateRows.length,
     committedLoanIds: uniqueLoanIds,
   };
   raw.markModified("notes");
+  raw.markModified("failedRows");
   await raw.save();
 
   return { loanIdsAffected: uniqueLoanIds };
@@ -433,12 +453,31 @@ export async function commitBatch(batchId, { actor = null, actorRole = null } = 
     });
   }
 
+  // Auto-run validation immediately after ingest so the reviewer queue reflects
+  // reality without a separate manual "Run validation" step. Dynamic import
+  // avoids a circular dep between ingest and rule engine services.
+  let validation = null;
+  try {
+    const { runValidationForBatch } = await import("./ruleEngine/index.js");
+    validation = await runValidationForBatch(batchId, { actor, actorRole });
+  } catch (err) {
+    logger.warn(`[ingest] post-commit validation failed for ${batchId}: ${err?.message || err}`);
+  }
+
   return {
     batchId,
     committedCount: result.loanIdsAffected.length,
     loanIdsAffected: result.loanIdsAffected,
     orphanLoanIds: result.orphanLoanIds || [],
     alreadyCommitted: false,
+    validation: validation
+      ? {
+          exceptionsCreated: validation.exceptionsCreated,
+          exceptionsUpdated: validation.exceptionsUpdated,
+          exceptionsAutoDismissed: validation.exceptionsAutoDismissed,
+          autoVerified: validation.autoVerified || [],
+        }
+      : null,
   };
 }
 

@@ -15,8 +15,10 @@
     "frontend": "npm --workspace frontend run dev",
     "check:env": "npm --workspace backend run check:env",
     "reset": "npm --workspace backend run reset -- --yes",
+    "reset:demo": "node scripts/reset-sized.mjs 3000 3",
+    "reset:xl": "node scripts/reset-sized.mjs 5000 4",
     "smoke": "npm --workspace backend run smoke -- --yes",
-    "start:demo": "npm run reset && npm run dev"
+    "start:demo": "npm run reset:demo && npm run dev"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

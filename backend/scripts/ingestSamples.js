@@ -17,6 +17,18 @@ const FILES = [
   { fileType: "document_manifest", name: "document_manifest.csv" },
 ];
 
+// Any additional `servicer_update_YYYYMM.csv` produced by generateSamples when
+// SERVICER_EXTRA_BATCHES > 0 is auto-picked-up and ingested as extra
+// servicer_update batches (in filename order → chronological).
+function discoverExtraServicerBatches() {
+  if (!fs.existsSync(SAMPLES_DIR)) return [];
+  return fs
+    .readdirSync(SAMPLES_DIR)
+    .filter((f) => /^servicer_update_\d{6}\.csv$/i.test(f))
+    .sort()
+    .map((name) => ({ fileType: "servicer_update", name }));
+}
+
 /**
  * Reads /samples/*.csv and drives the ingestService end-to-end.
  * Callable from other scripts (reset, smoke) that manage their own DB lifecycle.
@@ -35,8 +47,9 @@ export async function ingestSamples({ resetCollections = true } = {}) {
   const operator = await User.findOne({ email: "operator@intain.test" }).lean();
   if (!operator) throw new Error("Seeded operator not found. Run: npm run seed:users first.");
 
+  const filesToIngest = [...FILES, ...discoverExtraServicerBatches()];
   const summary = { batches: [], loans: 0, imports: 0, auditEvents: 0 };
-  for (const f of FILES) {
+  for (const f of filesToIngest) {
     const filePath = path.join(SAMPLES_DIR, f.name);
     if (!fs.existsSync(filePath)) {
       throw new Error(`Missing sample: ${filePath}. Run: npm run gen:samples`);
@@ -54,7 +67,7 @@ export async function ingestSamples({ resetCollections = true } = {}) {
       actor: operator._id,
       actorRole: operator.role,
     });
-    summary.batches.push({ fileType: f.fileType, preview, commit });
+    summary.batches.push({ fileType: f.fileType, name: f.name, preview, commit });
   }
   const [loans, imports, events] = await Promise.all([
     Loan.countDocuments(),
@@ -71,7 +84,7 @@ async function main() {
     const summary = await ingestSamples({ resetCollections: true });
     for (const b of summary.batches) {
       logger.info(
-        `[ingest:samples] ${b.fileType}: rows=${b.preview.rowCount} normalized=${b.preview.normalizedCount} failed=${b.preview.failedRowCount} batchId=${b.preview.batchId.slice(0,8)}... committed=${b.commit.committedCount} orphans=${(b.commit.orphanLoanIds || []).length}`
+        `[ingest:samples] ${b.fileType}${b.name ? ` (${b.name})` : ""}: rows=${b.preview.rowCount} normalized=${b.preview.normalizedCount} failed=${b.preview.failedRowCount} batchId=${b.preview.batchId.slice(0,8)}... committed=${b.commit.committedCount} orphans=${(b.commit.orphanLoanIds || []).length}`
       );
     }
     logger.info(`[ingest:samples] summary: loans=${summary.loans} rawImports=${summary.imports} auditEvents=${summary.auditEvents}`);

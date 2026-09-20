@@ -4,7 +4,7 @@ import { asyncHandler, HttpError } from "../middleware/error.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { AiRecommendation, Exception, Loan, ReviewDecision } from "../models/index.js";
 import { appendAuditEvent } from "../services/ingestService.js";
-import { computeVerifiabilityStatus } from "../services/verificationService.js";
+import { computeVerifiabilityStatus, verifyLoan } from "../services/verificationService.js";
 import {
   escapeRegex,
   paginationMeta,
@@ -51,7 +51,16 @@ router.get(
     if (loanId) filter.loanId = loanId;
     if (q) {
       const rx = new RegExp(escapeRegex(q), "i");
-      filter.$or = [{ loanId: rx }, { ruleName: rx }, { message: rx }];
+      // Exception collection has no borrowerName — resolve it first via a
+      // pre-lookup so the queue search matches "Sarah" as well as "LN-".
+      const matchingLoans = await Loan.find(
+        { $or: [{ borrowerName: rx }, { borrowerId: rx }] },
+        { loanId: 1, _id: 0 }
+      ).lean();
+      const matchingLoanIds = matchingLoans.map((l) => l.loanId);
+      const or = [{ loanId: rx }, { ruleName: rx }, { ruleId: rx }, { message: rx }, { exceptionId: rx }];
+      if (matchingLoanIds.length) or.push({ loanId: { $in: matchingLoanIds } });
+      filter.$or = or;
     }
 
     const pipeline = [
@@ -193,7 +202,11 @@ router.post(
 const MANUAL_ACTIONS = {
   manual_approve: { newStatus: "resolved", resolutionType: "approved_as_is" },
   manual_reject: { newStatus: "dismissed", resolutionType: "rejected" },
-  request_correction: { newStatus: "resolved", resolutionType: "correction_requested" },
+  // request_correction: keep the exception in the queue (in_review) but flag it
+  // as awaiting an operator/servicer fix. The problem statement wants correction
+  // to loop back — not close the ticket. Reviewer can approve/reject later once
+  // the corrected data arrives.
+  request_correction: { newStatus: "in_review", resolutionType: "correction_requested" },
 };
 
 const resolveSchema = z.discriminatedUnion("action", [
@@ -250,8 +263,15 @@ router.patch(
       const map = MANUAL_ACTIONS[body.action];
       exc.status = map.newStatus;
       exc.resolutionType = map.resolutionType;
-      exc.resolvedBy = req.user.id;
-      exc.resolvedAt = new Date();
+      // request_correction keeps the ticket open (in_review), so leave
+      // resolvedBy/resolvedAt null; other actions terminate the ticket.
+      const isTerminal = map.newStatus === "resolved" || map.newStatus === "dismissed";
+      if (isTerminal) {
+        exc.resolvedBy = req.user.id;
+        exc.resolvedAt = new Date();
+      } else {
+        exc.resolutionNote = body.comment || "Awaiting corrected data from operator/servicer";
+      }
       await exc.save();
 
       const decision = await ReviewDecision.create({
@@ -275,7 +295,7 @@ router.patch(
         actorRole: req.user.role,
       });
 
-      const verif = await maybeVerifiabilityChanged(exc.loanId);
+      const verif = await maybeVerifiabilityChanged(exc.loanId, { id: req.user.id, role: req.user.role });
       return res.json({ exception: exc.toObject(), decision, ...verif });
     }
 
@@ -317,7 +337,7 @@ router.patch(
         actorRole: req.user.role,
       });
 
-      const verif = await maybeVerifiabilityChanged(exc.loanId);
+      const verif = await maybeVerifiabilityChanged(exc.loanId, { id: req.user.id, role: req.user.role });
       return res.json({ exception: exc.toObject(), decision, ...verif });
     }
 
@@ -407,7 +427,7 @@ router.patch(
       actorRole: req.user.role,
     });
 
-    const verif = await maybeVerifiabilityChanged(exc.loanId);
+    const verif = await maybeVerifiabilityChanged(exc.loanId, { id: req.user.id, role: req.user.role });
     return res.json({ exception: exc.toObject(), decision, applied: after, dropped, ...verif });
   })
 );
@@ -431,14 +451,21 @@ function normalizeForLog(v) {
   return v ?? null;
 }
 
-async function maybeVerifiabilityChanged(loanId) {
+async function maybeVerifiabilityChanged(loanId, actor) {
   const eligibility = await computeVerifiabilityStatus(loanId);
-  if (!eligibility.eligible) return { verifiabilityChanged: false, eligibility };
+  if (!eligibility.eligible) return { verifiabilityChanged: false, eligibility, autoVerified: false };
   const loan = await Loan.findOne({ loanId }).select("verificationStatus").lean();
   if (!loan || loan.verificationStatus === "verified") {
-    return { verifiabilityChanged: false, eligibility };
+    return { verifiabilityChanged: false, eligibility, autoVerified: false };
   }
-  return { verifiabilityChanged: true, eligibility };
+  // Auto-verify: the last blocking exception was just cleared, so promote the
+  // loan straight to "verified" (writes a VerifiedLoanRecord + audit event).
+  try {
+    const record = await verifyLoan(loanId, actor || null);
+    return { verifiabilityChanged: true, eligibility, autoVerified: true, verifiedRecordHash: record?.recordHash || null };
+  } catch (err) {
+    return { verifiabilityChanged: true, eligibility, autoVerified: false, autoVerifyError: err?.message || String(err) };
+  }
 }
 
 // ------------------- helpers -------------------

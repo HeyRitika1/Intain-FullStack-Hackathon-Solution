@@ -158,8 +158,11 @@ function ExceptionsColumn({ detail, focusExceptionId, onChanged }) {
           {STATUS_ORDER.map((s) => {
             const others = (grouped[s] || []).filter((e) => e.exceptionId !== focused?.exceptionId);
             if (!others.length) return null;
+            // Auto-expand if there aren't many — otherwise the user sees only the
+            // pinned one and thinks the loan has 2 exceptions max.
+            const defaultOpen = others.length <= 4;
             return (
-              <details key={s} className="rounded-md border border-slate-200 bg-slate-50">
+              <details key={s} open={defaultOpen} className="rounded-md border border-slate-200 bg-slate-50">
                 <summary className="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
                   {STATUS_LABEL[s]} ({others.length})
                 </summary>
@@ -215,11 +218,12 @@ function ExceptionCard({ exception: e, pinned = false, onChanged, loan }) {
     if (busy || terminal) return;
     setBusy(action);
     try {
-      await apiPatch(`/exceptions/${encodeURIComponent(e.exceptionId)}/resolve`, {
+      const res = await apiPatch(`/exceptions/${encodeURIComponent(e.exceptionId)}/resolve`, {
         action,
         comment: comment.trim() || undefined,
       });
       toast.success(`Exception ${action.replace("_", " ")}`);
+      if (res?.autoVerified) toast.success(`${loan?.loanId || e.loanId} auto-verified`);
       setComment("");
       onChanged();
     } catch (err) {
